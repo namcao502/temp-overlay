@@ -18,7 +18,7 @@ public class TrayApp : ApplicationContext
     {
         _settings = AppSettings.Load();
 
-        _computer = new Computer { IsCpuEnabled = true, IsGpuEnabled = true, IsMemoryEnabled = true };
+        _computer = new Computer { IsCpuEnabled = true, IsGpuEnabled = true };
         _computer.Open();
 
         var menu = new ContextMenuStrip();
@@ -77,13 +77,13 @@ public class TrayApp : ApplicationContext
         string cpuStr = cpu.HasValue ? $"{cpu.Value:F0}" : "--";
         string gpuStr = gpu.HasValue ? $"{gpu.Value:F0}" : "--";
 
-        _cpuIcon.Icon?.Dispose();
-        _cpuIcon.Icon = DrawIcon(cpuStr, _settings.GetCpuColor());
-        _cpuIcon.Text = $"CPU {cpuStr}C";
-
         _gpuIcon.Icon?.Dispose();
         _gpuIcon.Icon = DrawIcon(gpuStr, _settings.GetGpuColor());
         _gpuIcon.Text = $"GPU {gpuStr}C";
+
+        _cpuIcon.Icon?.Dispose();
+        _cpuIcon.Icon = DrawIcon(cpuStr, _settings.GetCpuColor());
+        _cpuIcon.Text = $"CPU {cpuStr}C";
     }
 
     [DllImport("user32.dll")]
@@ -91,26 +91,26 @@ public class TrayApp : ApplicationContext
 
     private static Icon DrawIcon(string value, Color valueColor)
     {
-        const int w = 32;
-        const int h = 32;
+        const int w = 16;
+        const int h = 16;
 
         using var bmp = new Bitmap(w, h);
         using var g = Graphics.FromImage(bmp);
-        using var sf = new StringFormat
+        using var sf = new StringFormat(StringFormat.GenericTypographic)
         {
             Alignment = StringAlignment.Center,
             LineAlignment = StringAlignment.Center,
         };
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
         using var brush = new SolidBrush(valueColor);
-        float fontSize = 28f;
-        while (fontSize > 6f)
+        float fontSize = 14f;
+        while (fontSize > 4f)
         {
-            using var font = new Font("Arial", fontSize, FontStyle.Bold);
-            var size = g.MeasureString(value, font);
+            using var font = new Font("Arial", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+            var size = g.MeasureString(value, font, PointF.Empty, sf);
             if (size.Width <= w && size.Height <= h) { g.DrawString(value, font, brush, new RectangleF(0, 0, w, h), sf); break; }
             fontSize -= 1f;
         }
