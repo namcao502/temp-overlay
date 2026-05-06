@@ -91,8 +91,8 @@ public class TrayApp : ApplicationContext
 
     private static Icon DrawIcon(string value, Color valueColor)
     {
-        const int w = 16;
-        const int h = 16;
+        const int w = 32;
+        const int h = 32;
 
         using var bmp = new Bitmap(w, h);
         using var g = Graphics.FromImage(bmp);
@@ -103,10 +103,10 @@ public class TrayApp : ApplicationContext
         };
 
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
         using var brush = new SolidBrush(valueColor);
-        float fontSize = 14f;
+        float fontSize = 28f;
         while (fontSize > 4f)
         {
             using var font = new Font("Arial", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
