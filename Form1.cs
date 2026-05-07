@@ -14,12 +14,11 @@ public class TrayApp : ApplicationContext
     private AppSettings _settings;
     private SettingsForm? _settingsForm;
 
-    public TrayApp()
+    public TrayApp(Computer computer)
     {
         _settings = AppSettings.Load();
 
-        _computer = new Computer { IsCpuEnabled = true, IsGpuEnabled = true };
-        _computer.Open();
+        _computer = computer;  // use the pre-opened instance from Program.cs
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Settings", null, (_, _) => OpenSettings());
@@ -43,7 +42,8 @@ public class TrayApp : ApplicationContext
     {
         if (_settingsForm != null)
         {
-            _settingsForm.BringToFront();
+            _settingsForm.WindowState = FormWindowState.Normal;
+            _settingsForm.Activate();
             return;
         }
 
@@ -63,9 +63,15 @@ public class TrayApp : ApplicationContext
 
         foreach (var hw in _computer.Hardware)
         {
-            hw.Update();
-            foreach (var sub in hw.SubHardware)
-                sub.Update();
+            // Only update if the settings form is not doing it concurrently on this tick.
+            // Both timers run on the UI thread so there is no race, but calling Update
+            // twice per second on the same hardware is redundant when the form is open.
+            if (_settingsForm == null)
+            {
+                hw.Update();
+                foreach (var sub in hw.SubHardware)
+                    sub.Update();
+            }
 
             if (hw.HardwareType == HardwareType.Cpu && cpu == null)
                 cpu = ReadPackageTemp(hw) ?? ReadFirstTemp(hw) ?? ReadFirstTempDeep(hw);
@@ -151,6 +157,7 @@ public class TrayApp : ApplicationContext
     private void ExitApp()
     {
         _timer.Stop();
+        _timer.Dispose();
         _computer.Close();
         _cpuIcon.Visible = false;
         _gpuIcon.Visible = false;

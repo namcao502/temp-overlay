@@ -10,13 +10,20 @@ static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        if (!IsDriverInstalled())
+        using var mutex = new Mutex(true, "Global\\TempOverlay_SingleInstance", out bool createdNew);
+        if (!createdNew) return;
+
+        var computer = new Computer { IsCpuEnabled = true, IsGpuEnabled = true };
+        computer.Open();
+
+        if (!IsDriverInstalled(computer))
         {
+            computer.Close();
             ShowDriverMissingDialog();
             return;
         }
 
-        Application.Run(new TrayApp());
+        Application.Run(new TrayApp(computer));
     }
 
     private static void ShowDriverMissingDialog()
@@ -35,7 +42,7 @@ static class Program
 
         var icon = new Label
         {
-            Text = "⚠",
+            Text = "!",
             Font = new Font("Segoe UI", 24f),
             ForeColor = Color.FromArgb(255, 200, 0),
             Location = new Point(16, 20),
@@ -79,25 +86,17 @@ static class Program
         form.ShowDialog();
     }
 
-    private static bool IsDriverInstalled()
+    private static bool IsDriverInstalled(Computer computer)
     {
         try
         {
-            var computer = new Computer { IsCpuEnabled = true };
-            computer.Open();
-
             foreach (var hw in computer.Hardware)
             {
                 hw.Update();
                 foreach (var s in hw.Sensors)
                     if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
-                    {
-                        computer.Close();
                         return true;
-                    }
             }
-
-            computer.Close();
             return false;
         }
         catch

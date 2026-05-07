@@ -21,8 +21,26 @@ public class AppSettings
                 return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            LogError($"AppSettings.Load failed: {ex.Message}");
+        }
         return new AppSettings();
+    }
+
+    private static string LogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "TempOverlay", "error.log");
+
+    private static void LogError(string message)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(LogPath)!;
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     public void Save()

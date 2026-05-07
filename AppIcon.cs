@@ -8,7 +8,11 @@ static class AppIcon
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    public static Icon Create()
+    private static Icon? _cache;
+
+    public static Icon Create() => _cache ??= BuildIcon();
+
+    private static Icon BuildIcon()
     {
         const int S = 64;
         using var bmp = new Bitmap(S, S);
@@ -20,24 +24,22 @@ static class AppIcon
         var tubeBg  = Color.FromArgb(45, 45, 60);
         var outline = Color.FromArgb(90, 90, 120);
 
-        int cx     = S / 2;
-        int tubeW  = 14;
-        int tubeX  = cx - tubeW / 2;
+        int cx      = S / 2;
+        int tubeW   = 14;
+        int tubeX   = cx - tubeW / 2;
         int tubeTop = 5;
         int tubeBot = 43;
-        int tubeH  = tubeBot - tubeTop;
-        int bulbR  = 11;
+        int tubeH   = tubeBot - tubeTop;
+        int bulbR   = 11;
         int bulbTop = tubeBot - 4;
 
-        // Tube (rounded top)
         using var tubePath = RoundedRect(tubeX, tubeTop, tubeW, tubeH, tubeW / 2);
 
         using (var b = new SolidBrush(tubeBg))
             g.FillPath(b, tubePath);
 
-        // Mercury fill (65%)
-        float fill = 0.65f;
-        int fillH = (int)(tubeH * fill);
+        float fill  = 0.65f;
+        int   fillH = (int)(tubeH * fill);
         g.SetClip(tubePath);
         using (var b = new SolidBrush(accent))
             g.FillRectangle(b, tubeX, tubeBot - fillH, tubeW, fillH);
@@ -46,7 +48,6 @@ static class AppIcon
         using (var p = new Pen(outline, 1.5f))
             g.DrawPath(p, tubePath);
 
-        // Tick marks
         using (var p = new Pen(Color.FromArgb(110, 110, 140), 1f))
         {
             for (int i = 1; i <= 3; i++)
@@ -56,17 +57,14 @@ static class AppIcon
             }
         }
 
-        // Tube shine
         using (var b = new SolidBrush(Color.FromArgb(28, 255, 255, 255)))
             g.FillRectangle(b, tubeX + 3, tubeTop + 6, 3, tubeH - 14);
 
-        // Bulb
         using (var b = new SolidBrush(accent))
             g.FillEllipse(b, cx - bulbR, bulbTop, bulbR * 2, bulbR * 2);
         using (var p = new Pen(Color.FromArgb(0, 100, 200), 1.5f))
             g.DrawEllipse(p, cx - bulbR, bulbTop, bulbR * 2, bulbR * 2);
 
-        // Bulb shine
         using (var b = new SolidBrush(Color.FromArgb(50, 255, 255, 255)))
             g.FillEllipse(b, cx - bulbR + 3, bulbTop + 3, 6, 5);
 

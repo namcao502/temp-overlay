@@ -52,6 +52,9 @@ public class SettingsForm : Form
     private readonly System.Windows.Forms.Timer _statsTimer;
     private long _lastBytesSent, _lastBytesRecv;
     private PerformanceCounter? _diskRead, _diskWrite;
+    private readonly int _dpiX;
+    private int _tickCount;
+    private int _cachedProcessCount;
 
     public SettingsForm(AppSettings settings, Computer computer)
     {
@@ -99,6 +102,9 @@ public class SettingsForm : Form
         _navSettings.Click += (_, _) => Activate(settings: true);
         _navInfo.Click     += (_, _) => Activate(settings: false);
         Activate(settings: true);
+
+        using (var g = CreateGraphics())
+            _dpiX = (int)g.DpiX;
 
         InitPerfCounters();
         InitNetwork();
@@ -294,9 +300,12 @@ public class SettingsForm : Form
         var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
         _lblUser.Text      = $"{Environment.UserName} @ {Environment.MachineName}";
         _lblUptime.Text    = $"{(int)uptime.TotalDays}d  {uptime.Hours}h  {uptime.Minutes}m";
-        _lblProcesses.Text = $"{Process.GetProcesses().Length}";
+        if (_tickCount % 5 == 0)
+            _cachedProcessCount = Process.GetProcesses().Length;
+        _tickCount++;
+        _lblProcesses.Text = $"{_cachedProcessCount}";
         var scr = Screen.PrimaryScreen;
-        _lblScreen.Text    = scr != null ? $"{scr.Bounds.Width} x {scr.Bounds.Height}  @  {(int)CreateGraphics().DpiX} DPI" : "--";
+        _lblScreen.Text    = scr != null ? $"{scr.Bounds.Width} x {scr.Bounds.Height}  @  {_dpiX} DPI" : "--";
 
         float? cpuTemp = null, cpuLoad = null, cpuClock = null, cpuPower = null, cpuMin = null, cpuMax = null;
         float? gpuTemp = null, gpuLoad = null;
@@ -458,11 +467,25 @@ public class SettingsForm : Form
         Close();
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _statsTimer.Stop();
+            _statsTimer.Dispose();
+            _fTitle.Dispose();
+            _fHeader.Dispose();
+            _fBody.Dispose();
+            _fMono.Dispose();
+            _diskRead?.Dispose();
+            _diskWrite?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _statsTimer.Stop();
-        _diskRead?.Dispose();
-        _diskWrite?.Dispose();
+        _statsTimer.Stop();  // stop immediately; Dispose(bool) will call Dispose() on it
         base.OnFormClosed(e);
     }
 
@@ -481,11 +504,30 @@ public class SettingsForm : Form
     {
         try
         {
-            var args = enable
-                ? $"/create /tn \"TempOverlay\" /tr \"\\\"{Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName}\\\"\" /sc onlogon /rl highest /f"
-                : "/delete /tn \"TempOverlay\" /f";
-            var p = Process.Start(new ProcessStartInfo("schtasks", args) { CreateNoWindow = true, UseShellExecute = false });
-            p!.WaitForExit();
+            var psi = new ProcessStartInfo("schtasks")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            };
+
+            if (enable)
+            {
+                var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
+                psi.ArgumentList.Add("/create");
+                psi.ArgumentList.Add("/tn"); psi.ArgumentList.Add("TempOverlay");
+                psi.ArgumentList.Add("/tr"); psi.ArgumentList.Add($"\"{exePath}\"");
+                psi.ArgumentList.Add("/sc"); psi.ArgumentList.Add("onlogon");
+                psi.ArgumentList.Add("/rl"); psi.ArgumentList.Add("highest");
+                psi.ArgumentList.Add("/f");
+            }
+            else
+            {
+                psi.ArgumentList.Add("/delete");
+                psi.ArgumentList.Add("/tn"); psi.ArgumentList.Add("TempOverlay");
+                psi.ArgumentList.Add("/f");
+            }
+
+            Process.Start(psi)!.WaitForExit();
         }
         catch { }
     }
