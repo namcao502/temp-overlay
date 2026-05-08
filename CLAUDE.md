@@ -6,13 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```powershell
 # Run (debug)
-dotnet run
+dotnet run --project TempOverlay.csproj
 
 # Build
-dotnet build
+dotnet build TempOverlay.csproj
 
 # Publish single-file exe
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+dotnet publish TempOverlay.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 # Output: bin\Release\net8.0-windows\win-x64\publish\TempOverlay.exe
 
 # Register auto-start with Windows (run once as admin)

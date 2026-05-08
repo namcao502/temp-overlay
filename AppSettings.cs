@@ -6,6 +6,7 @@ public class AppSettings
 {
     public string CpuColor { get; set; } = "#0071C5";
     public string GpuColor { get; set; } = "#76B900";
+    public bool? StartWithWindows { get; set; } = null;
 
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

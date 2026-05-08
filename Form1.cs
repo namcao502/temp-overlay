@@ -13,10 +13,19 @@ public class TrayApp : ApplicationContext
     private readonly Computer _computer;
     private AppSettings _settings;
     private SettingsForm? _settingsForm;
+    private string _lastCpuStr = "";
+    private string _lastGpuStr = "";
+    private Color _lastCpuRenderColor = Color.Empty;
+    private Color _lastGpuRenderColor = Color.Empty;
+    private string _lastTooltip = "";
+    private Color _cpuBaseColor;
+    private Color _gpuBaseColor;
 
     public TrayApp(Computer computer)
     {
         _settings = AppSettings.Load();
+        _cpuBaseColor = _settings.GetCpuColor();
+        _gpuBaseColor = _settings.GetGpuColor();
 
         _computer = computer;  // use the pre-opened instance from Program.cs
 
@@ -47,10 +56,12 @@ public class TrayApp : ApplicationContext
             return;
         }
 
-        _settingsForm = new SettingsForm(_settings, _computer);
+        _settingsForm = new SettingsForm(_settings);
         _settingsForm.FormClosed += (_, _) =>
         {
             _settings = AppSettings.Load();
+            _cpuBaseColor = _settings.GetCpuColor();
+            _gpuBaseColor = _settings.GetGpuColor();
             _settingsForm = null;
         };
         _settingsForm.Show();
@@ -63,15 +74,9 @@ public class TrayApp : ApplicationContext
 
         foreach (var hw in _computer.Hardware)
         {
-            // Only update if the settings form is not doing it concurrently on this tick.
-            // Both timers run on the UI thread so there is no race, but calling Update
-            // twice per second on the same hardware is redundant when the form is open.
-            if (_settingsForm == null)
-            {
-                hw.Update();
-                foreach (var sub in hw.SubHardware)
-                    sub.Update();
-            }
+            hw.Update();
+            foreach (var sub in hw.SubHardware)
+                sub.Update();
 
             if (hw.HardwareType == HardwareType.Cpu && cpu == null)
                 cpu = ReadPackageTemp(hw) ?? ReadFirstTemp(hw) ?? ReadFirstTempDeep(hw);
@@ -83,22 +88,43 @@ public class TrayApp : ApplicationContext
         string cpuStr = cpu.HasValue ? $"{cpu.Value:F0}" : "--";
         string gpuStr = gpu.HasValue ? $"{gpu.Value:F0}" : "--";
 
-        _gpuIcon.Icon?.Dispose();
-        _gpuIcon.Icon = DrawIcon(gpuStr, _settings.GetGpuColor());
-        _gpuIcon.Text = $"GPU {gpuStr}C";
+        Color cpuRender = InterpolateColor(_cpuBaseColor, cpu);
+        Color gpuRender = InterpolateColor(_gpuBaseColor, gpu);
 
-        _cpuIcon.Icon?.Dispose();
-        _cpuIcon.Icon = DrawIcon(cpuStr, _settings.GetCpuColor());
-        _cpuIcon.Text = $"CPU {cpuStr}C";
+        string tooltip = $"CPU {cpuStr}°C  |  GPU {gpuStr}°C";
+        if (tooltip != _lastTooltip)
+        {
+            _cpuIcon.Text = tooltip;
+            _gpuIcon.Text = tooltip;
+            _lastTooltip = tooltip;
+        }
+
+        if (cpuStr != _lastCpuStr || cpuRender != _lastCpuRenderColor)
+        {
+            _cpuIcon.Icon?.Dispose();
+            _cpuIcon.Icon = DrawIcon(cpuStr, cpuRender);
+            _lastCpuStr = cpuStr;
+            _lastCpuRenderColor = cpuRender;
+        }
+
+        if (gpuStr != _lastGpuStr || gpuRender != _lastGpuRenderColor)
+        {
+            _gpuIcon.Icon?.Dispose();
+            _gpuIcon.Icon = DrawIcon(gpuStr, gpuRender);
+            _lastGpuStr = gpuStr;
+            _lastGpuRenderColor = gpuRender;
+        }
     }
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    private static Icon DrawIcon(string value, Color valueColor)
+    private static readonly Dictionary<int, float> _fontSizeCache = new();
+    private static readonly Dictionary<float, Font> _fontCache = new();
+
+    internal static Icon DrawIcon(string value, Color valueColor)
     {
-        const int w = 32;
-        const int h = 32;
+        const int w = 32, h = 32;
 
         using var bmp = new Bitmap(w, h);
         using var g = Graphics.FromImage(bmp);
@@ -111,15 +137,25 @@ public class TrayApp : ApplicationContext
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-        using var brush = new SolidBrush(valueColor);
-        float fontSize = 28f;
-        while (fontSize > 4f)
+        int len = value.Length;
+        if (!_fontSizeCache.TryGetValue(len, out float fontSize))
         {
-            using var font = new Font("Arial", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
-            var size = g.MeasureString(value, font, PointF.Empty, sf);
-            if (size.Width <= w && size.Height <= h) { g.DrawString(value, font, brush, new RectangleF(0, 0, w, h), sf); break; }
-            fontSize -= 1f;
+            fontSize = 28f;
+            while (fontSize > 4f)
+            {
+                using var testFont = new Font("Arial", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+                var measured = g.MeasureString(value, testFont, PointF.Empty, sf);
+                if (measured.Width <= w && measured.Height <= h) break;
+                fontSize -= 1f;
+            }
+            _fontSizeCache[len] = fontSize;
         }
+
+        if (!_fontCache.TryGetValue(fontSize, out var font))
+            _fontCache[fontSize] = font = new Font("Arial", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+
+        using var brush = new SolidBrush(valueColor);
+        g.DrawString(value, font, brush, new RectangleF(0, 0, w, h), sf);
 
         var hIcon = bmp.GetHicon();
         try { return (Icon)Icon.FromHandle(hIcon).Clone(); }
@@ -154,11 +190,36 @@ public class TrayApp : ApplicationContext
         return null;
     }
 
+    private static Color InterpolateColor(Color baseColor, float? temp)
+    {
+        if (!temp.HasValue || temp.Value < 60f) return baseColor;
+
+        var warm = Color.FromArgb(255, 140, 0);
+        var hot  = Color.FromArgb(255, 40,  40);
+
+        if (temp.Value >= 80f)
+        {
+            float t = Math.Clamp((temp.Value - 80f) / 20f, 0f, 1f);
+            return Lerp(warm, hot, t);
+        }
+
+        float u = (temp.Value - 60f) / 20f;
+        return Lerp(baseColor, warm, u);
+    }
+
+    private static Color Lerp(Color a, Color b, float t) =>
+        Color.FromArgb(
+            (int)Math.Round(a.R + (b.R - a.R) * t),
+            (int)Math.Round(a.G + (b.G - a.G) * t),
+            (int)Math.Round(a.B + (b.B - a.B) * t));
+
     private void ExitApp()
     {
         _timer.Stop();
         _timer.Dispose();
         _computer.Close();
+        foreach (var f in _fontCache.Values) f.Dispose();
+        _fontCache.Clear();
         _cpuIcon.Visible = false;
         _gpuIcon.Visible = false;
         Application.Exit();
